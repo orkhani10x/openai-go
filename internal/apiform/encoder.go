@@ -94,10 +94,11 @@ func (e *encoder) typeEncoder(t reflect.Type) encoderFunc {
 		f  encoderFunc
 	)
 	wg.Add(1)
-	fi, loaded := encoders.LoadOrStore(entry, encoderFunc(func(key string, v reflect.Value, writer *multipart.Writer) error {
-		wg.Wait()
-		return f(key, v, writer)
-	}))
+	fi, loaded := encoders.LoadOrStore(entry,
+		encoderFunc(func(key string, v reflect.Value, writer *multipart.Writer) error {
+			wg.Wait()
+			return f(key, v, writer)
+		}))
 	if loaded {
 		return fi.(encoderFunc)
 	}
@@ -403,6 +404,9 @@ func escapeQuotes(s string) string {
 
 func (e *encoder) newReaderTypeEncoder() encoderFunc {
 	return func(key string, value reflect.Value, writer *multipart.Writer) error {
+		if value.IsNil() {
+			return nil
+		}
 		reader := value.Convert(reflect.TypeOf((*io.Reader)(nil)).Elem()).Interface().(io.Reader)
 		filename := "anonymous_file"
 		contentType := "application/octet-stream"
@@ -417,7 +421,8 @@ func (e *encoder) newReaderTypeEncoder() encoderFunc {
 
 		// Below is taken almost 1-for-1 from [multipart.CreateFormFile]
 		h := make(textproto.MIMEHeader)
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(key), escapeQuotes(filename)))
+		h.Set("Content-Disposition",
+			fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(key), escapeQuotes(filename)))
 		h.Set("Content-Type", contentType)
 		filewriter, err := writer.CreatePart(h)
 		if err != nil {
